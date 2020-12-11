@@ -1,118 +1,141 @@
 import cv2
+import os.path
+import dlib
+from imutils import face_utils
 import matplotlib.pyplot as plt
+from scipy.spatial import distance
+import numpy as np
+
+path = os.getcwd()
 
 class SleepDetection:
     
     def __init__(self, img):
 
         self.img = img
-        self.gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        self.gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+
+        path = os.getcwd()
 
         self.cascade = cv2.CascadeClassifier(
-            '/Users/yamada/Documents/TUS/3年/後期/応用情報工学演習/谷口研/課題/gw/SleepDetection/haarcascades/haarcascade_frontalface_alt2.xml'
+            path + '/haarcascades/haarcascade_frontalface_alt2.xml'
         )
-        # leftとrightは逆転する
-        # self.left_eye_cascade = cv2.CascadeClassifier(
-        #     '/Users/yamada/Documents/TUS/3年/後期/応用情報工学演習/谷口研/課題/gw/SleepDetection/haarcascades/haarcascade_righteye_2splits.xml'
-        # )
-        # self.right_eye_cascade = cv2.CascadeClassifier(
-        #     '/Users/yamada/Documents/TUS/3年/後期/応用情報工学演習/谷口研/課題/gw/SleepDetection/haarcascades/haarcascade_lefteye_2splits.xml'
-        # )
 
         self.eye_cascade = cv2.CascadeClassifier(
-            '/Users/yamada/Documents/TUS/3年/後期/応用情報工学演習/谷口研/課題/gw/SleepDetection/haarcascades/haarcascade_eye_tree_eyeglasses.xml'
+            path + '/haarcascades/haarcascade_eye_tree_eyeglasses.xml'
         )
+
+        self.face_parts_detector = dlib.shape_predictor(
+            path + '/dlib/shape_predictor_68_face_landmarks.dat'
+        )
+
+    def calc_ear(self, eye):
+        # A = distance.euclidean(eye[1], eye[5])
+        # B = distance.euclidean(eye[2], eye[4])
+        # C = distance.euclidean(eye[0], eye[3])
+        A = np.linalg.norm(eye[1] - eye[5])
+        B = np.linalg.norm(eye[2] - eye[4])
+        C = np.linalg.norm(eye[0] - eye[3])
+        eye_ear = (A + B) / (2.0 * C)
+        return round(eye_ear, 3)
+
     #顔部分の情報を検出
-    def detect_face_parts(self):
+    def detect_faces(self):
         facerect = self.cascade.detectMultiScale(
             self.gray,
             scaleFactor=1.11,
-            minNeighbors=3,
-            minSize=(100, 100)
+            minNeighbors=2,
+            minSize=(30, 30)
         )
-
+  
+        faces = []
         if len(facerect) != 0:
             for x, y, w, h in facerect:
                 # 顔の部分
-                return {'x': x, 'y': y, 'w': w, 'h': h}
+                faces.append({'x': x, 'y': y, 'w': w, 'h': h})
 
-        return {}
+        return faces
+
+    def detect_face_parts(self, face):
+        around_face = dlib.rectangle(
+            face["x"], 
+            face["y"], 
+            face["x"]+face["w"], 
+            face["y"]+face["h"]
+        )
+        face_parts = self.face_parts_detector(self.img, around_face)
+        face_parts = face_utils.shape_to_np(face_parts)
+
+        # for i, ((x, y)) in enumerate(face_parts[:]):
+        #     cv2.circle(self.img, (x, y), 1, (0, 255, 0), -1)
+        #     cv2.putText(self.img, str(i), (x + 2, y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 255, 0), 1)
+    
+        left_eye_ear = self.calc_ear(face_parts[42:48])
+        right_eye_ear = self.calc_ear(face_parts[36:42])
+
+        print(left_eye_ear, right_eye_ear)
+        if (left_eye_ear + right_eye_ear) < 0.50:
+            cv2.putText(self.img, "Oh",
+                (face["x"],face["y"]), cv2.FONT_HERSHEY_PLAIN, 3, (0,0,255), 3, 1)
+        else:
+            cv2.putText(self.img, "Good",
+                (face["x"],face["y"]), cv2.FONT_HERSHEY_PLAIN, 3, (0,255,255), 3, 1)
 
     # 目を閉じているか
-    def is_closed_eyes(self, face_parts):
+    def is_closed_eyes(self, face):
         # 顔の部分
-        face_x = face_parts['x']
-        face_y = face_parts['y']
-        face_w = face_parts['w']
-        face_h = face_parts['h']
+        face_x = face['x']
+        face_y = face['y']
+        face_w = face['w']
+        face_h = face['h']
 
         # 顔の部分から目の近傍を取る
-        eyes_gray = self.gray[face_y: face_y + int(face_h/2), face_x: face_x + face_w]
-        # cv2.imshow('face', eyes_gray)
+        eyes_gray = self.gray[face_y: face_y + face_h, face_x: face_x + face_w]
 
-        min_size = (8, 8)  # 調整いるかも
-
-        ''' 目の検出
-        眼鏡をかけている場合、精度は低くなる。
-        PCのスペックが良ければ、haarcascade_eye_tree_eyeglasses.xmlを使ったほうがよい。
-        '''
-        # left_eye = self.left_eye_cascade.detectMultiScale(
-        #     eyes_gray,
-        #     scaleFactor=1.11,
-        #     minNeighbors=3,
-        #     minSize=min_size
-        # )
-        # right_eye = self.right_eye_cascade.detectMultiScale(
-        #     eyes_gray,
-        #     scaleFactor=1.11,
-        #     minNeighbors=3,
-        #     minSize=min_size
-        # )
-        eyes = self.eye_cascade.detectMultiScale(
+        self.eyes = self.eye_cascade.detectMultiScale(
             eyes_gray,
             scaleFactor=1.11,
-            minNeighbors=3,
-            minSize=min_size
+            minNeighbors=1,
+            minSize=(1, 1)
         )
 
-        ''' left_eye, right_eye
-        [[116  40  36  36] [34  40  40  40]] => 開いている
-        [[34 40 41 41]] => 閉じている
-        [] => 未検出
-        '''
-        # for ex,ey,ew,eh in right_eye:
-        #     cv2.rectangle(self.img, (face_x + ex, face_y + ey), (face_x + ex + ew, face_y + ey + eh), (255, 255, 0), 1)
-        # for ex,ey,ew,eh in left_eye:
-        #     cv2.rectangle(self.img, (face_x + ex, face_y + ey), (face_x + ex + ew, face_y + ey + eh), (255, 255, 0), 1)
-
-        for ex, ey, ew, eh in eyes:
-            cv2.rectangle(self.img, (face_x + ex, face_y + ey), (face_x + ex + ew, face_y + ey + eh), (255, 255, 0), 2)
-        # 片目だけ閉じても駄目にしたい場合(これだと結構厳しい(精度悪い？)判定になる)
-        # return len(left_eye) <= 1 or len(right_eye) <= 1
-
         # どちらかの目が開いていればOK
-        return len(eyes) == 0
+        return len(self.eyes) == 0
+    
+    def draw_eye_rectangle(self, face):
+        for ex, ey, ew, eh in self.eyes:
+            cv2.rectangle(
+                self.img, 
+                (face['x'] + ex, face['y'] + ey), 
+                (face['x'] + ex + ew, face['y'] + ey + eh), 
+                (255, 255, 0), 
+                2
+            )
 
-    #四角で囲む
-    def output_image(self):
-        return True
+    def draw_face_rectangle(self, face):
+        cv2.rectangle(
+            self.img, 
+            (face['x'], face['y']), 
+            (face['x'] + face['w'], face['y'] + face['h']), 
+            (255, 0, 0), 
+            2
+        )
+    
 def main():
     #変更可能性あり
-    img = cv2.imread("/Users/yamada/Documents/TUS/3年/後期/応用情報工学演習/谷口研/課題/gw/SleepDetection/yamada.jpg")
-
+    img = cv2.imread(path + "/SleepDetection/image/they.jpeg")
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     sd = SleepDetection(img)
-    face_parts = sd.detect_face_parts()
-    if len(face_parts) != 0 and sd.is_closed_eyes(face_parts) is False:
-        x = face_parts['x']
-        y = face_parts['y']
-        w = face_parts['w']
-        h = face_parts['h']
-
-        cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
+    faces = sd.detect_faces()
+    # print(faces)
+    for i in range(len(faces)):
+        sd.draw_face_rectangle(faces[i])
+        sd.detect_face_parts(faces[i])
+        if sd.is_closed_eyes(faces[i]) is False:
+            sd.draw_eye_rectangle(faces[i])
 
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     plt.show()
-
 
 if __name__ == "__main__":
     main()
