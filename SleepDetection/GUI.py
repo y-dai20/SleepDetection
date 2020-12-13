@@ -25,6 +25,7 @@ class MyWindow(QMainWindow):
 
         menubar = self.menuBar()
         menubar.setNativeMenuBar(False)
+
         fileMenu = menubar.addMenu('&File')
         fileMenu.addAction(openFile)
 
@@ -53,7 +54,6 @@ class MyWindow(QMainWindow):
         for i in range(len(faces)):
             sd.draw_face_rectangle(faces[i])
             sd.detect_face_parts(faces[i])
-
             if sd.is_closed_eyes(faces[i]) is False:
                 sd.draw_eye_rectangle(faces[i])
 
@@ -77,7 +77,7 @@ class MyWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     mw = MyWindow()
-    sys.exit(app.exec_())
+    app.exec_()
 
 if __name__ == '__main__':
     main()

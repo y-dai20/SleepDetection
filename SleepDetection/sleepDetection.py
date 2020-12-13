@@ -18,15 +18,15 @@ class SleepDetection:
         path = os.getcwd()
 
         self.cascade = cv2.CascadeClassifier(
-            path + '/haarcascades/haarcascade_frontalface_alt2.xml'
+            path + '/SleepDetection/haarcascades/haarcascade_frontalface_alt2.xml'
         )
 
         self.eye_cascade = cv2.CascadeClassifier(
-            path + '/haarcascades/haarcascade_eye_tree_eyeglasses.xml'
+            path + '/SleepDetection/haarcascades/haarcascade_eye_tree_eyeglasses.xml'
         )
 
         self.face_parts_detector = dlib.shape_predictor(
-            path + '/dlib/shape_predictor_68_face_landmarks.dat'
+            path + '/SleepDetection/dlib/shape_predictor_68_face_landmarks.dat'
         )
 
     def calc_ear(self, eye):
@@ -57,29 +57,35 @@ class SleepDetection:
         return faces
 
     def detect_face_parts(self, face):
-        around_face = dlib.rectangle(
-            face["x"], 
-            face["y"], 
-            face["x"]+face["w"], 
-            face["y"]+face["h"]
-        )
-        face_parts = self.face_parts_detector(self.img, around_face)
-        face_parts = face_utils.shape_to_np(face_parts)
+        x = face["x"]
+        y = face["y"]
+        w = face["w"]
+        h = face["h"]
 
+        face_gray = self.gray[y :(y + h), x :(x + w)]
+        scale = 480 / h
+        face_gray_resized = cv2.resize(face_gray, dsize=None, fx=scale, fy=scale)
+
+        around_face = dlib.rectangle(0, 0, face_gray_resized.shape[1], face_gray_resized.shape[0])
+
+        face_parts = self.face_parts_detector(face_gray_resized, around_face)
+        face_parts = face_utils.shape_to_np(face_parts)
         # for i, ((x, y)) in enumerate(face_parts[:]):
         #     cv2.circle(self.img, (x, y), 1, (0, 255, 0), -1)
         #     cv2.putText(self.img, str(i), (x + 2, y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 255, 0), 1)
     
         left_eye_ear = self.calc_ear(face_parts[42:48])
         right_eye_ear = self.calc_ear(face_parts[36:42])
-
-        print(left_eye_ear, right_eye_ear)
-        if (left_eye_ear + right_eye_ear) < 0.50:
+        # print(left_eye_ear, right_eye_ear)
+        if (left_eye_ear + right_eye_ear) < 0.5:
+            cv2.putText(self.img, "Sleepy",
+                (x, y), cv2.FONT_HERSHEY_PLAIN, 3, (255,0,0), 3, 1)
+        elif (left_eye_ear + right_eye_ear) < 0.55:
             cv2.putText(self.img, "Oh",
-                (face["x"],face["y"]), cv2.FONT_HERSHEY_PLAIN, 3, (0,0,255), 3, 1)
+                (x, y), cv2.FONT_HERSHEY_PLAIN, 3, (0,255,0), 3, 1) 
         else:
             cv2.putText(self.img, "Good",
-                (face["x"],face["y"]), cv2.FONT_HERSHEY_PLAIN, 3, (0,255,255), 3, 1)
+                (x, y), cv2.FONT_HERSHEY_PLAIN, 3, (0,0,255), 3, 1)
 
     # 目を閉じているか
     def is_closed_eyes(self, face):
@@ -91,14 +97,23 @@ class SleepDetection:
 
         # 顔の部分から目の近傍を取る
         eyes_gray = self.gray[face_y: face_y + face_h, face_x: face_x + face_w]
-
+        # self.eyes = self.eye_cascade.detectMultiScale(
+        #     eyes_gray,
+        #     scaleFactor=1.11,
+        #     minNeighbors=3,
+        #     minSize=(1, 1)
+        # )
+        # print(self.eyes)
+        # scale = int(480 / face_h)
+        # print(scale)
+        # eyes_gray = cv2.resize(eyes_gray, dsize=None, fx=scale, fy=scale)
         self.eyes = self.eye_cascade.detectMultiScale(
             eyes_gray,
             scaleFactor=1.11,
-            minNeighbors=1,
+            minNeighbors=2,
             minSize=(1, 1)
         )
-
+        # print(self.eyes)
         # どちらかの目が開いていればOK
         return len(self.eyes) == 0
     
@@ -130,8 +145,8 @@ def main():
     # print(faces)
     for i in range(len(faces)):
         sd.draw_face_rectangle(faces[i])
-        sd.detect_face_parts(faces[i])
         if sd.is_closed_eyes(faces[i]) is False:
+            sd.detect_face_parts(faces[i])
             sd.draw_eye_rectangle(faces[i])
 
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
